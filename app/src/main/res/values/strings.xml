@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Roll24</string>
+    <string name="camera_permission_required">Camera permission is required to use Roll24</string>
+    <string name="grant_permission">Grant Permission</string>
+    <string name="capture">Capture</string>
+    <string name="save">Save</string>
+    <string name="discard">Discard</string>
+    <string name="processing">Processing...</string>
+    <string name="photo_saved">Photo saved</string>
+    <string name="photo_discarded">Photo discarded</string>
+</resources>
