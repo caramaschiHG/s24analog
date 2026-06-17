@@ -249,7 +249,7 @@ fun CameraScreen(
         SensorRail(
             sensors = cameraUiState.sensorProfiles,
             active = cameraUiState.activeLens,
-            onSelected = viewModel::selectLens,
+            onSelected = { profile -> viewModel.selectLens(context, profile) },
             modifier = Modifier
                 .align(if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) Alignment.CenterStart else Alignment.CenterEnd)
                 .padding(horizontal = 10.dp)
@@ -266,7 +266,7 @@ fun CameraScreen(
         FilmSelector(
             profiles = FilmProfileRepository.profiles,
             selectedProfile = selectedProfile,
-            onProfileSelected = viewModel::selectProfile,
+            onProfileSelected = { profile -> viewModel.selectProfile(context, profile) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 132.dp)

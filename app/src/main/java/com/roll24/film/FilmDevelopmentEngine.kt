@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
 import com.roll24.camera.SensorProfile
+import com.roll24.film.FeatureFlags
 import com.roll24.film.processors.*
+import com.roll24.image.CaptureMetadata
 import com.roll24.sensor.SensorSpectralResponse
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -35,10 +37,11 @@ class FilmDevelopmentEngine {
         profile: FilmProfile,
         labSettings: FilmLabSettings,
         sensorProfile: SensorProfile? = null,
-        captureIso: Int? = null
+        captureIso: Int? = null,
+        captureMetadata: CaptureMetadata? = null
     ): DevelopedPair {
         val negative = createNegative(bitmap, profile, labSettings)
-        val developed = develop(bitmap, profile, labSettings, sensorProfile, captureIso)
+        val developed = develop(bitmap, profile, labSettings, sensorProfile, captureIso, captureMetadata = captureMetadata)
         return DevelopedPair(negative = negative, developed = developed)
     }
 
@@ -67,22 +70,117 @@ class FilmDevelopmentEngine {
     fun develop(
         bitmap: Bitmap,
         profile: FilmProfile,
-        labSettings: FilmLabSettings,
-        sensorProfile: SensorProfile? = null,
-        captureIso: Int? = null
+        labSettings: FilmLabSettings
     ): Bitmap {
-        Log.d(TAG, "Starting film development with profile: ${profile.name}")
+        return developInternal(
+            bitmap = bitmap,
+            profile = profile,
+            labSettings = labSettings,
+            sensorProfile = null,
+            captureIso = null,
+            resolution = ProcessingResolution.FULL,
+            useNewPipeline = false
+        )
+    }
+
+    /**
+     * Simple resolution-aware overload that defaults to the legacy/identity
+     * path because no sensor profile is supplied.
+     */
+    fun develop(
+        bitmap: Bitmap,
+        profile: FilmProfile,
+        labSettings: FilmLabSettings,
+        resolution: ProcessingResolution
+    ): Bitmap {
+        return developInternal(
+            bitmap = bitmap,
+            profile = profile,
+            labSettings = labSettings,
+            sensorProfile = null,
+            captureIso = null,
+            resolution = resolution,
+            useNewPipeline = false
+        )
+    }
+
+    /**
+     * Legacy development path for A/B comparison.
+     *
+     * Runs the same pipeline as [develop] but with all new Wave-3 processors
+     * disabled, reproducing the pre-physical-emulation look.
+     */
+    fun developLegacy(bitmap: Bitmap, profile: FilmProfile): Bitmap {
+        return develop(bitmap, profile, FilmLabSettings(), ProcessingResolution.FULL)
+    }
+
+    /**
+     * Full development pipeline with sensor awareness and feature-flag gating.
+     *
+     * When [sensorProfile] is null the new pipeline still follows the feature
+     * flags, but spectral normalization is skipped because no sensor match is
+     * available. Callers that do not need the new pipeline can use the
+     * [developLegacy] path or the [develop] overloads without sensor data.
+     */
+    fun develop(
+        bitmap: Bitmap,
+        profile: FilmProfile,
+        labSettings: FilmLabSettings,
+        sensorProfile: SensorProfile?,
+        captureIso: Int? = null,
+        resolution: ProcessingResolution = ProcessingResolution.FULL,
+        captureMetadata: CaptureMetadata? = null
+    ): Bitmap {
+        val effectiveIso = captureIso ?: captureMetadata?.iso
+        return developInternal(
+            bitmap = bitmap,
+            profile = profile,
+            labSettings = labSettings,
+            sensorProfile = sensorProfile,
+            captureIso = effectiveIso,
+            resolution = resolution,
+            useNewPipeline = FeatureFlags.useNewPipeline
+        )
+    }
+
+    private fun developInternal(
+        bitmap: Bitmap,
+        profile: FilmProfile,
+        labSettings: FilmLabSettings,
+        sensorProfile: SensorProfile?,
+        captureIso: Int?,
+        resolution: ProcessingResolution,
+        useNewPipeline: Boolean
+    ): Bitmap {
+        Log.d(TAG, "Starting film development with profile: ${profile.name}, resolution: $resolution, newPipeline: $useNewPipeline")
         val startTime = System.currentTimeMillis()
         val adjustedProfile = profile.withLabSettings(labSettings)
-        
-        var result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        
+
+        // Resolution-aware downsampling. The pipeline works at the target size
+        // and the final bitmap dimensions match the requested resolution.
+        val (targetWidth, targetHeight) = resolution.computeTargetSize(
+            bitmap.width,
+            bitmap.height,
+            labSettings.targetOutputWidth.takeIf { it > 0 },
+            labSettings.targetOutputHeight.takeIf { it > 0 }
+        )
+
+        val working = if (targetWidth == bitmap.width && targetHeight == bitmap.height) {
+            bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        } else {
+            Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        }
+
+        var result = working
+
         try {
             // 1. Normalize (prepare for processing)
-            result = normalize(result, sensorProfile, labSettings.normalizeAmount)
+            result = normalize(result, sensorProfile, labSettings.normalizeAmount, useNewPipeline)
 
             // 2. Reduce digital look (subtle softening of harsh digital characteristics)
-            result = reduceDigitalLook(result, labSettings.digitalLookReduction)
+            if (useNewPipeline) {
+                result = reduceDigitalLook(result, labSettings.digitalLookReduction)
+            }
 
             // 3. Apply tone curve
             result = toneCurveProcessor.apply(result, adjustedProfile.contrast, adjustedProfile.blackPoint)
@@ -91,15 +189,21 @@ class FilmDevelopmentEngine {
             result = toneCurveProcessor.compressHighlights(result, adjustedProfile.highlightCompression)
 
             // 5. Analog response: per-channel H&D curve.
-            val hdParams = adjustedProfile.hdCurveParams
-                ?: HdCurveParams.defaultFromProfile(adjustedProfile)
+            val hdParams = if (useNewPipeline) {
+                adjustedProfile.hdCurveParams ?: HdCurveParams.defaultFromProfile(adjustedProfile)
+            } else {
+                HdCurveParams.defaultFromProfile(adjustedProfile)
+            }
             result = hdCurveProcessor.process(result, hdParams)
 
             // 6. Shadow control
             result = toneCurveProcessor.liftShadows(result, adjustedProfile.shadowLift)
 
             // 7. Orange mask removal for color negative films.
-            if (adjustedProfile.filmType == FilmType.C41 || adjustedProfile.filmType == FilmType.VISION3) {
+            val applyOrangeMask = useNewPipeline &&
+                FeatureFlags.useOrangeMaskRemoval &&
+                (adjustedProfile.filmType == FilmType.C41 || adjustedProfile.filmType == FilmType.VISION3)
+            if (applyOrangeMask) {
                 result = orangeMaskProcessor.process(result, adjustedProfile.filmType)
             }
 
@@ -147,7 +251,7 @@ class FilmDevelopmentEngine {
 
             // 13. Grain
             if (adjustedProfile.grainAmount > 0f) {
-                val sensorSpec = sensorProfile?.matchedDossierSpec
+                val sensorSpec = if (useNewPipeline) sensorProfile?.matchedDossierSpec else null
                 result = grainProcessor.apply(
                     result,
                     adjustedProfile.grainAmount,
@@ -162,17 +266,17 @@ class FilmDevelopmentEngine {
                 result = softnessProcessor.apply(result, adjustedProfile.softnessAmount)
             }
 
-            result = blendWithOriginal(bitmap, result, labSettings.filmIntensity.coerceIn(0f, 1.25f))
-            
+            result = blendWithOriginal(working, result, labSettings.filmIntensity.coerceIn(0f, 1.25f))
+
             val elapsed = System.currentTimeMillis() - startTime
             Log.d(TAG, "Film development completed in ${elapsed}ms")
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error during film development", e)
-            // Return original bitmap on error
-            result = bitmap
+            // Return working bitmap (already at target resolution) on error
+            result = working
         }
-        
+
         return result
     }
 
@@ -282,15 +386,20 @@ class FilmDevelopmentEngine {
      * [amount]. When no sensor match exists, only a gamma (sRGB EOTF) decode
      * is applied.
      */
-    private fun normalize(bitmap: Bitmap, sensorProfile: SensorProfile?, amount: Float): Bitmap {
+    private fun normalize(bitmap: Bitmap, sensorProfile: SensorProfile?, amount: Float, useNewPipeline: Boolean): Bitmap {
         if (amount <= 0f) return bitmap
 
         val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         val spec = sensorProfile?.matchedDossierSpec
-        val spectralMatrix = spec?.let { SensorSpectralResponse.forSensor(it) }
+        val spectralMatrix = if (useNewPipeline && FeatureFlags.useSpectralNormalize && spec != null) {
+            SensorSpectralResponse.forSensor(spec)
+        } else {
+            null
+        }
 
-        // Build the 3x3 inverse spectral matrix once. If no sensor match is
-        // available, use the identity matrix (gamma-only normalization).
+        // Build the 3x3 inverse spectral matrix once. If spectral normalization
+        // is disabled or no sensor match is available, use the identity matrix
+        // (gamma-only normalization).
         val inv = if (spectralMatrix != null) invert3x3(spectralMatrix) else identity3x3()
         val width = output.width
         val height = output.height

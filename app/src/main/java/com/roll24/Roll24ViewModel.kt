@@ -37,9 +37,14 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 class Roll24ViewModel : ViewModel() {
-    
+
+    companion object {
+        private const val PREFS_NAME = "roll24_prefs"
+        private const val KEY_LAST_FILM_PREFIX = "last_film_"
+    }
+
     private val filmEngine = FilmDevelopmentEngine()
-    
+
     private val _selectedProfile = MutableStateFlow(FilmProfileRepository.getDefaultProfile())
     val selectedProfile: StateFlow<FilmProfile> = _selectedProfile.asStateFlow()
 
@@ -57,9 +62,57 @@ class Roll24ViewModel : ViewModel() {
 
     private var galleryStarted = false
     private val pendingRecipes = mutableMapOf<String, CaptureRecipeSnapshot>()
-    
-    fun selectProfile(profile: FilmProfile) {
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun saveSelectedProfileForLens(context: Context, lensLabel: String, profileId: String) {
+        prefs(context).edit().putString("$KEY_LAST_FILM_PREFIX$lensLabel", profileId).apply()
+    }
+
+    private fun loadSelectedProfileForLens(context: Context, lensLabel: String): FilmProfile? {
+        val id = prefs(context).getString("$KEY_LAST_FILM_PREFIX$lensLabel", null) ?: return null
+        return FilmProfileRepository.getProfile(id)
+    }
+
+    /**
+     * Returns a sensible default film profile for the given S24 Ultra lens label.
+     *
+     * The mapping favours the canonical stocks being added in Waves 4/5, but
+     * falls back to existing profiles when a canonical stock is not yet present
+     * in the repository.
+     */
+    private fun defaultProfileForLens(lensLabel: String?): FilmProfile {
+        val fallback = FilmProfileRepository.getDefaultProfile()
+        if (lensLabel == null) return fallback
+
+        return when (lensLabel) {
+            "0.6x" -> FilmProfileRepository.getProfile("gold_200")
+                ?: FilmProfileRepository.getProfile("fujicolor_c200")
+                ?: FilmProfileRepository.getProfile("warm_gold_200")
+            "1x" -> FilmProfileRepository.getProfile("portra_400")
+                ?: FilmProfileRepository.getProfile("ektar_100")
+                ?: FilmProfileRepository.getProfile("soft_portrait_400")
+                ?: FilmProfileRepository.getProfile("s24_1x_clean_negative")
+            "3x" -> FilmProfileRepository.getProfile("pro_400h")
+                ?: FilmProfileRepository.getProfile("s24_3x_portrait_400")
+            "5x" -> FilmProfileRepository.getProfile("vision3_250d")
+                ?: FilmProfileRepository.getProfile("s24_5x_chrome_200")
+            else -> null
+        } ?: fallback
+    }
+
+    private fun applyLensProfileSelection(context: Context, lens: SensorProfile?) {
+        if (lens == null) return
+        val saved = loadSelectedProfileForLens(context, lens.lensLabel)
+        _selectedProfile.value = saved ?: defaultProfileForLens(lens.lensLabel)
+    }
+
+    fun selectProfile(context: Context, profile: FilmProfile) {
         _selectedProfile.value = profile
+        _cameraUiState.value.activeLens?.let { lens ->
+            saveSelectedProfileForLens(context, lens.lensLabel, profile.id)
+        }
     }
 
     fun updateAspect(aspect: ViewfinderAspect) {
@@ -108,20 +161,26 @@ class Roll24ViewModel : ViewModel() {
     }
 
     fun scanSensors(context: Context) {
+        val appContext = context.applicationContext
         viewModelScope.launch(Dispatchers.IO) {
-            val profiles = runCatching { CameraSensorScanner.scan(context.applicationContext) }
+            val profiles = runCatching { CameraSensorScanner.scan(appContext) }
                 .getOrDefault(emptyList())
+            val newlyActive = profiles.firstOrNull()
             _cameraUiState.update { current ->
                 current.copy(
                     sensorProfiles = profiles,
-                    activeLens = current.activeLens ?: profiles.firstOrNull()
+                    activeLens = current.activeLens ?: newlyActive
                 )
+            }
+            if (newlyActive != null && _cameraUiState.value.activeLens == null) {
+                applyLensProfileSelection(appContext, newlyActive)
             }
         }
     }
 
-    fun selectLens(profile: SensorProfile) {
+    fun selectLens(context: Context, profile: SensorProfile) {
         _cameraUiState.update { it.copy(activeLens = profile) }
+        applyLensProfileSelection(context.applicationContext, profile)
     }
 
     fun beginCaptureFeedback(context: Context): String {
@@ -305,7 +364,13 @@ class Roll24ViewModel : ViewModel() {
 
                 updateJob(jobId, CaptureJobStage.DEVELOPING, 0.42f)
                 val cropped = BitmapTransforms.centerCropToAspect(decoded, cameraSettings.aspect.ratio)
-                val pair = filmEngine.developPair(cropped, profile, labSettings)
+                val pair = filmEngine.developPair(
+                    cropped,
+                    profile,
+                    labSettings,
+                    sensorProfile = snapshot.lens,
+                    captureMetadata = metadata
+                )
                 updateJob(jobId, CaptureJobStage.DEVELOPING, 0.76f)
                 val saved = ImageSaver.saveAnalogCapture(
                     context = appContext,

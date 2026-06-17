@@ -20,6 +20,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.roll24.R
 import com.roll24.film.FilmProfile
+import com.roll24.film.FilmType
 import com.roll24.haptics.Roll24Haptics
 import com.roll24.haptics.rememberRoll24Haptics
 import com.roll24.ui.theme.Roll24Colors
@@ -85,6 +86,16 @@ private fun FilmCard(
         "s24_3x_portrait_400" -> R.drawable.s24_3x_portrait_400_card
         "s24_5x_chrome_200" -> R.drawable.s24_5x_chrome_200_card
         "s24_night_800" -> R.drawable.s24_night_800_card
+        "portra_400" -> R.drawable.portra_400_card
+        "ektar_100" -> R.drawable.ektar_100_card
+        "pro_400h" -> R.drawable.pro_400h_card
+        "velvia_50" -> R.drawable.velvia_50_card
+        "cinestill_800t" -> R.drawable.cinestill_800t_card
+        "vision3_250d" -> R.drawable.vision3_250d_card
+        "gold_200" -> R.drawable.gold_200_card
+        "fujicolor_c200" -> R.drawable.fujicolor_c200_card
+        "hp5_plus_400" -> R.drawable.hp5_plus_400_card
+        "tri_x_400" -> R.drawable.tri_x_400_card
         else -> R.drawable.warm_gold_200_card
     }
 
@@ -97,22 +108,60 @@ private fun FilmCard(
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Profile card image
-        Image(
-            painter = painterResource(id = cardDrawable),
-            contentDescription = profile.name,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp)
-                .clip(RoundedCornerShape(topStart = Roll24Radius.Md, topEnd = Roll24Radius.Md))
-        )
-        
+        Box {
+            // Profile card image
+            Image(
+                painter = painterResource(id = cardDrawable),
+                contentDescription = profile.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp)
+                    .clip(RoundedCornerShape(topStart = Roll24Radius.Md, topEnd = Roll24Radius.Md))
+            )
+
+            // Film-type badge (C41 / E6 / BW / V3)
+            FilmTypeBadge(
+                filmType = profile.filmType,
+                modifier = Modifier
+                    .padding(6.dp)
+                    .align(Alignment.TopStart)
+            )
+        }
+
         // Profile name
         Text(
             text = profile.name,
             modifier = Modifier.padding(vertical = 8.dp, horizontal = 12.dp),
             color = if (isSelected) Roll24Colors.WarmGold else Roll24Colors.Paper,
             style = androidx.compose.material3.MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+@Composable
+private fun FilmTypeBadge(
+    filmType: FilmType,
+    modifier: Modifier = Modifier
+) {
+    val label = when (filmType) {
+        FilmType.C41 -> "C41"
+        FilmType.E6 -> "E6"
+        FilmType.BLACK_AND_WHITE -> "BW"
+        FilmType.VISION3 -> "V3"
+    }
+
+    Box(
+        modifier = modifier
+            .background(
+                color = Roll24Colors.Panel.copy(alpha = 0.84f),
+                shape = RoundedCornerShape(4.dp)
+            )
+            .padding(horizontal = 5.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = label,
+            color = Roll24Colors.Paper,
+            style = androidx.compose.material3.MaterialTheme.typography.labelSmall
         )
     }
 }

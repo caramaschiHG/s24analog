@@ -246,7 +246,19 @@ object FilmProfileRepository {
             softnessAmount = 0.08f,
             blackAndWhite = false,
             filmType = FilmType.C41
-        )
+        ),
+
+        // T17-T26: Canonical film stocks (built from FilmStock constants)
+        FilmProfile.fromStock(FilmStock.PORTRA_400),
+        FilmProfile.fromStock(FilmStock.EKTAR_100),
+        FilmProfile.fromStock(FilmStock.PRO_400H),
+        FilmProfile.fromStock(FilmStock.VELVIA_50),
+        FilmProfile.fromStock(FilmStock.CINESTILL_800T),
+        FilmProfile.fromStock(FilmStock.VISION3_250D),
+        FilmProfile.fromStock(FilmStock.GOLD_200),
+        FilmProfile.fromStock(FilmStock.FUJICOLOR_C200),
+        FilmProfile.fromStock(FilmStock.HP5_PLUS_400),
+        FilmProfile.fromStock(FilmStock.TRI_X_400)
     )
     
     fun getProfile(id: String): FilmProfile? = profiles.find { it.id == id }

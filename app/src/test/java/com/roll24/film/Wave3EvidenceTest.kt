@@ -69,8 +69,8 @@ class Wave3EvidenceTest {
         val off = FilmLabSettings(normalizeAmount = 0f, digitalLookReduction = 0f)
         val on = FilmLabSettings(normalizeAmount = 0f, digitalLookReduction = 0.8f)
 
-        val outOff = engine.develop(inBitmap, FilmProfile.NEUTRAL, off, null, null)
-        val outOn = engine.develop(inBitmap, FilmProfile.NEUTRAL, on, null, null)
+        val outOff = engine.develop(inBitmap, FilmProfile.NEUTRAL, off, sensorProfile = null, captureIso = null)
+        val outOn = engine.develop(inBitmap, FilmProfile.NEUTRAL, on, sensorProfile = null, captureIso = null)
 
         var diff = 0L
         var count = 0

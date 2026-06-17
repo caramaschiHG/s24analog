@@ -10,6 +10,8 @@ data class FilmLabSettings(
     val warmth: Float = 0f,
     val contrast: Float = 0f,
     val normalizeAmount: Float = 1f,
-    val digitalLookReduction: Float = 0.3f
+    val digitalLookReduction: Float = 0.3f,
+    val targetOutputWidth: Int = 0,
+    val targetOutputHeight: Int = 0
 )
 
