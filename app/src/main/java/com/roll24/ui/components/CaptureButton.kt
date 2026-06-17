@@ -50,5 +50,10 @@ fun CaptureButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    Roll24CaptureButton(modifier = modifier, onCapture = onClick)
+    Roll24CaptureButton(
+        modifier = modifier,
+        onCapture = {
+            if (enabled) onClick()
+        }
+    )
 }

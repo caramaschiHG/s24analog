@@ -24,9 +24,10 @@ object FilmProfileRepository {
             bloomAmount = 0.05f,
             vignetteAmount = 0.08f,
             softnessAmount = 0.05f,
-            blackAndWhite = false
+            blackAndWhite = false,
+            filmType = FilmType.C41
         ),
-        
+
         // Soft Portrait 400 - Soft, elegant colors for portraits
         FilmProfile(
             id = "soft_portrait_400",
@@ -48,9 +49,10 @@ object FilmProfileRepository {
             bloomAmount = 0.1f,
             vignetteAmount = 0.1f,
             softnessAmount = 0.15f,
-            blackAndWhite = false
+            blackAndWhite = false,
+            filmType = FilmType.C41
         ),
-        
+
         // Night Tungsten 800 - High speed film for low light
         FilmProfile(
             id = "night_tungsten_800",
@@ -72,9 +74,10 @@ object FilmProfileRepository {
             bloomAmount = 0.2f,
             vignetteAmount = 0.15f,
             softnessAmount = 0.08f,
-            blackAndWhite = false
+            blackAndWhite = false,
+            filmType = FilmType.C41
         ),
-        
+
         // Green Street 400 - Urban street photography film
         FilmProfile(
             id = "green_street_400",
@@ -96,9 +99,10 @@ object FilmProfileRepository {
             bloomAmount = 0.08f,
             vignetteAmount = 0.12f,
             softnessAmount = 0.06f,
-            blackAndWhite = false
+            blackAndWhite = false,
+            filmType = FilmType.C41
         ),
-        
+
         // Mono Press 400 - High contrast black and white
         FilmProfile(
             id = "mono_press_400",
@@ -120,7 +124,128 @@ object FilmProfileRepository {
             bloomAmount = 0.12f,
             vignetteAmount = 0.1f,
             softnessAmount = 0.1f,
-            blackAndWhite = true
+            blackAndWhite = true,
+            filmType = FilmType.BLACK_AND_WHITE
+        ),
+
+        FilmProfile(
+            id = "s24_1x_clean_negative",
+            name = "S24 1x Clean Negative",
+            description = "Clean high-resolution negative base for the S24 Ultra main sensor",
+            baseIso = 100,
+            exposureCompensation = -0.1f,
+            whiteBalanceKelvin = 5600,
+            contrast = 0.04f,
+            saturation = -0.04f,
+            warmth = 0.02f,
+            tint = 0.01f,
+            shadowLift = 0.08f,
+            highlightCompression = 0.32f,
+            blackPoint = 0.01f,
+            grainAmount = 0.05f,
+            grainSize = 0.65f,
+            halationAmount = 0.06f,
+            bloomAmount = 0.03f,
+            vignetteAmount = 0.04f,
+            softnessAmount = 0.03f,
+            blackAndWhite = false,
+            filmType = FilmType.C41
+        ),
+
+        FilmProfile(
+            id = "s24_1x_street_400",
+            name = "S24 1x Street 400",
+            description = "Street negative tuned for the S24 Ultra main sensor",
+            baseIso = 400,
+            exposureCompensation = -0.2f,
+            whiteBalanceKelvin = 5400,
+            contrast = 0.24f,
+            saturation = 0.08f,
+            warmth = -0.03f,
+            tint = -0.03f,
+            shadowLift = 0.04f,
+            highlightCompression = 0.28f,
+            blackPoint = 0.04f,
+            grainAmount = 0.24f,
+            grainSize = 0.95f,
+            halationAmount = 0.12f,
+            bloomAmount = 0.06f,
+            vignetteAmount = 0.10f,
+            softnessAmount = 0.04f,
+            blackAndWhite = false,
+            filmType = FilmType.C41
+        ),
+
+        FilmProfile(
+            id = "s24_3x_portrait_400",
+            name = "S24 3x Portrait 400",
+            description = "Portrait negative for tele compression and softer skin",
+            baseIso = 400,
+            exposureCompensation = 0.1f,
+            whiteBalanceKelvin = 5900,
+            contrast = 0.08f,
+            saturation = -0.08f,
+            warmth = 0.12f,
+            tint = 0.02f,
+            shadowLift = 0.14f,
+            highlightCompression = 0.35f,
+            blackPoint = 0.015f,
+            grainAmount = 0.16f,
+            grainSize = 0.85f,
+            halationAmount = 0.16f,
+            bloomAmount = 0.14f,
+            vignetteAmount = 0.14f,
+            softnessAmount = 0.18f,
+            blackAndWhite = false,
+            filmType = FilmType.C41
+        ),
+
+        FilmProfile(
+            id = "s24_5x_chrome_200",
+            name = "S24 5x Chrome 200",
+            description = "Dense color and highlight rolloff for the 5x tele",
+            baseIso = 200,
+            exposureCompensation = -0.35f,
+            whiteBalanceKelvin = 5200,
+            contrast = 0.30f,
+            saturation = 0.22f,
+            warmth = -0.04f,
+            tint = 0.03f,
+            shadowLift = -0.02f,
+            highlightCompression = 0.42f,
+            blackPoint = 0.05f,
+            grainAmount = 0.12f,
+            grainSize = 0.75f,
+            halationAmount = 0.08f,
+            bloomAmount = 0.05f,
+            vignetteAmount = 0.18f,
+            softnessAmount = 0.06f,
+            blackAndWhite = false,
+            filmType = FilmType.E6
+        ),
+
+        FilmProfile(
+            id = "s24_night_800",
+            name = "S24 Night 800",
+            description = "Night film that turns sensor noise into visible grain",
+            baseIso = 800,
+            exposureCompensation = -0.45f,
+            whiteBalanceKelvin = 4300,
+            contrast = 0.28f,
+            saturation = 0.06f,
+            warmth = -0.12f,
+            tint = 0.02f,
+            shadowLift = 0.02f,
+            highlightCompression = 0.46f,
+            blackPoint = 0.06f,
+            grainAmount = 0.46f,
+            grainSize = 1.35f,
+            halationAmount = 0.34f,
+            bloomAmount = 0.22f,
+            vignetteAmount = 0.20f,
+            softnessAmount = 0.08f,
+            blackAndWhite = false,
+            filmType = FilmType.C41
         )
     )
     

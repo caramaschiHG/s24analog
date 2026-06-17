@@ -80,6 +80,11 @@ private fun FilmCard(
         "night_tungsten_800" -> R.drawable.night_tungsten_800_card
         "green_street_400" -> R.drawable.green_street_400_card
         "mono_press_400" -> R.drawable.mono_press_400_card
+        "s24_1x_clean_negative" -> R.drawable.s24_1x_clean_negative_card
+        "s24_1x_street_400" -> R.drawable.s24_1x_street_400_card
+        "s24_3x_portrait_400" -> R.drawable.s24_3x_portrait_400_card
+        "s24_5x_chrome_200" -> R.drawable.s24_5x_chrome_200_card
+        "s24_night_800" -> R.drawable.s24_night_800_card
         else -> R.drawable.warm_gold_200_card
     }
 

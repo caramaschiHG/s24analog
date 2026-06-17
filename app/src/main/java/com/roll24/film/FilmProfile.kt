@@ -1,26 +1,29 @@
 package com.roll24.film
 
+import android.graphics.Color
+import com.roll24.film.processors.HdCurveParams
+
 data class FilmProfile(
     val id: String,
     val name: String,
     val description: String,
-    
+
     // Capture settings
     val baseIso: Int,
     val exposureCompensation: Float,
     val whiteBalanceKelvin: Int,
-    
+
     // Tone and color
     val contrast: Float,
     val saturation: Float,
     val warmth: Float,
     val tint: Float,
-    
+
     // Shadows and highlights
     val shadowLift: Float,
     val highlightCompression: Float,
     val blackPoint: Float,
-    
+
     // Film effects
     val grainAmount: Float,
     val grainSize: Float,
@@ -28,9 +31,17 @@ data class FilmProfile(
     val bloomAmount: Float,
     val vignetteAmount: Float,
     val softnessAmount: Float,
-    
+
     // Special
-    val blackAndWhite: Boolean
+    val blackAndWhite: Boolean,
+
+    // Physical-film metadata (added in Wave 3)
+    val filmType: FilmType = FilmType.C41,
+    val filmStockId: String = "",
+    val hdCurveParams: HdCurveParams? = null,
+    val halationColor: Int = Color.parseColor("#FF5522"),
+    val halationThreshold: Float = 0.78f,
+    val bloomThreshold: Float = 0.70f
 ) {
     companion object {
         // Default neutral profile
@@ -54,7 +65,49 @@ data class FilmProfile(
             bloomAmount = 0f,
             vignetteAmount = 0f,
             softnessAmount = 0f,
-            blackAndWhite = false
+            blackAndWhite = false,
+            filmType = FilmType.E6,
+            filmStockId = "neutral",
+            hdCurveParams = null
         )
+
+        /**
+         * Builds a [FilmProfile] from a canonical [FilmStock].
+         *
+         * [pushPullStops] is applied as a small exposure/compensation shift.
+         */
+        fun fromStock(
+            stock: FilmStock,
+            pushPullStops: Float = 0f
+        ): FilmProfile {
+            return FilmProfile(
+                id = stock.id,
+                name = stock.name,
+                description = stock.description,
+                baseIso = stock.baseIso,
+                exposureCompensation = stock.exposureCompensation + pushPullStops * 0.5f,
+                whiteBalanceKelvin = stock.whiteBalanceKelvin,
+                contrast = stock.colorResponse.contrast,
+                saturation = stock.colorResponse.saturation,
+                warmth = stock.colorResponse.warmth,
+                tint = stock.colorResponse.tint,
+                shadowLift = stock.colorResponse.shadowLift,
+                highlightCompression = stock.colorResponse.highlightCompression,
+                blackPoint = stock.colorResponse.blackPoint,
+                grainAmount = stock.grainBaseAmount,
+                grainSize = stock.grainSize,
+                halationAmount = if (stock.filmType == FilmType.C41 || stock.filmType == FilmType.VISION3) 0.12f else 0.05f,
+                bloomAmount = 0.05f,
+                vignetteAmount = stock.vignetteAmount,
+                softnessAmount = stock.softnessAmount,
+            blackAndWhite = stock.blackAndWhite,
+            filmType = stock.filmType,
+            filmStockId = stock.id,
+            hdCurveParams = stock.curveParams,
+            halationColor = stock.halationColor,
+            halationThreshold = stock.halationThreshold,
+            bloomThreshold = stock.bloomThreshold
+        )
+        }
     }
 }
