@@ -3,6 +3,7 @@ package com.roll24.film
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
+import com.roll24.camera.CaptureSource
 import com.roll24.camera.SensorProfile
 import com.roll24.film.FeatureFlags
 import com.roll24.film.processors.*
@@ -152,7 +153,7 @@ class FilmDevelopmentEngine {
         resolution: ProcessingResolution,
         useNewPipeline: Boolean
     ): Bitmap {
-        Log.d(TAG, "Starting film development with profile: ${profile.name}, resolution: $resolution, newPipeline: $useNewPipeline")
+        Log.d(TAG, "Starting film development with profile: ${profile.name}, resolution: $resolution, newPipeline: $useNewPipeline, captureSource: ${labSettings.captureSource}")
         val startTime = System.currentTimeMillis()
         val adjustedProfile = profile.withLabSettings(labSettings)
 
@@ -175,11 +176,17 @@ class FilmDevelopmentEngine {
 
         try {
             // 1. Normalize (prepare for processing)
-            result = normalize(result, sensorProfile, labSettings.normalizeAmount, useNewPipeline)
+            result = normalize(
+                result,
+                sensorProfile,
+                labSettings.normalizeAmount,
+                useNewPipeline,
+                labSettings.captureSource
+            )
 
             // 2. Reduce digital look (subtle softening of harsh digital characteristics)
             if (useNewPipeline) {
-                result = reduceDigitalLook(result, labSettings.digitalLookReduction)
+                result = reduceDigitalLook(result, labSettings.digitalLookReduction, labSettings.captureSource)
             }
 
             // 3. Apply tone curve
@@ -386,20 +393,35 @@ class FilmDevelopmentEngine {
      * [amount]. When no sensor match exists, only a gamma (sRGB EOTF) decode
      * is applied.
      */
-    private fun normalize(bitmap: Bitmap, sensorProfile: SensorProfile?, amount: Float, useNewPipeline: Boolean): Bitmap {
+    private fun normalize(
+        bitmap: Bitmap,
+        sensorProfile: SensorProfile?,
+        amount: Float,
+        useNewPipeline: Boolean,
+        captureSource: CaptureSource
+    ): Bitmap {
         if (amount <= 0f) return bitmap
 
+        Log.d(TAG, "normalize path: $captureSource")
         val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+
+        // RAW_DNG input is already closer to linear sensor data, so skip the
+        // per-sensor inverse spectral remap and apply only gamma linearization.
         val spec = sensorProfile?.matchedDossierSpec
-        val spectralMatrix = if (useNewPipeline && FeatureFlags.useSpectralNormalize && spec != null) {
+        val spectralMatrix = if (
+            captureSource != CaptureSource.RAW_DNG &&
+            useNewPipeline &&
+            FeatureFlags.useSpectralNormalize &&
+            spec != null
+        ) {
             SensorSpectralResponse.forSensor(spec)
         } else {
             null
         }
 
         // Build the 3x3 inverse spectral matrix once. If spectral normalization
-        // is disabled or no sensor match is available, use the identity matrix
-        // (gamma-only normalization).
+        // is disabled, no sensor match is available, or the input came from RAW,
+        // use the identity matrix (gamma-only normalization).
         val inv = if (spectralMatrix != null) invert3x3(spectralMatrix) else identity3x3()
         val width = output.width
         val height = output.height
@@ -438,8 +460,15 @@ class FilmDevelopmentEngine {
      * slightly blurred version of itself. The blend intensity is controlled by
      * [amount]; 0 leaves the image unchanged.
      */
-    private fun reduceDigitalLook(bitmap: Bitmap, amount: Float): Bitmap {
-        if (amount <= 0f) return bitmap
+    private fun reduceDigitalLook(bitmap: Bitmap, amount: Float, captureSource: CaptureSource): Bitmap {
+        // RAW sensor data has not been through the ISP digital look, so only a
+        // tiny fraction of digital-look reduction is appropriate.
+        val effectiveAmount = when (captureSource) {
+            CaptureSource.RAW_DNG -> amount * 0.2f
+            CaptureSource.JPEG -> amount
+        }
+        Log.d(TAG, "reduceDigitalLook path: $captureSource, effectiveAmount: $effectiveAmount")
+        if (effectiveAmount <= 0f) return bitmap
 
         val width = bitmap.width
         val height = bitmap.height
@@ -450,7 +479,7 @@ class FilmDevelopmentEngine {
 
         // Small-radius separable box blur preserves edges better than a full
         // Gaussian blur while still softening fine digital sharpening artifacts.
-        val radius = (1f + amount * 2f).toInt().coerceAtLeast(1)
+        val radius = (1f + effectiveAmount * 2f).toInt().coerceAtLeast(1)
         boxBlur(blurred, width, height, radius)
 
         for (i in original.indices) {
@@ -471,7 +500,7 @@ class FilmDevelopmentEngine {
             val edgeG = kotlin.math.abs(origG - bg) / 255f
             val edgeB = kotlin.math.abs(origB - bb) / 255f
             val edge = kotlin.math.max(edgeR, kotlin.math.max(edgeG, edgeB))
-            val localAmount = amount * (1f - edge * 0.7f)
+            val localAmount = effectiveAmount * (1f - edge * 0.7f)
 
             original[i] = (a shl 24) or
                 (lerpInt(origR, br, localAmount) shl 16) or
