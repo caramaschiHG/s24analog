@@ -1,5 +1,6 @@
 package com.roll24.spike.gpu
 
+import android.annotation.TargetApi
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Canvas
@@ -92,6 +93,7 @@ class HdCurveGpuSpike {
         )
     }
 
+    @TargetApi(Build.VERSION_CODES.TIRAMISU)
     private fun applyWithRuntimeShader(bitmap: Bitmap, params: HdCurveParams): Bitmap {
         val lutBitmap = buildLutBitmap(params)
 

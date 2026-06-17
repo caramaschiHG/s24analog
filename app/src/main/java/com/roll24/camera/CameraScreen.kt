@@ -1,3 +1,5 @@
+@file:Suppress("UnsafeOptInUsageError")
+@file:OptIn(ExperimentalCamera2Interop::class)
 package com.roll24.camera
 
 import android.content.Context
