@@ -13,4 +13,12 @@ object FeatureFlags {
      * capture is never enabled in the main pipeline by this flag.
      */
     val enableRawInvestigation: Boolean = false
+
+    /**
+     * When true, enables the raw sensor capture path.
+     *
+     * This is the runtime gate used by [RawCaptureSession]; existing callers
+     * continue to use JPEG capture when the flag is false.
+     */
+    val enableRawCapture: Boolean = false
 }

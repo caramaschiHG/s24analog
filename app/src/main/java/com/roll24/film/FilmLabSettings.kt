@@ -1,6 +1,9 @@
 package com.roll24.film
 
+import com.roll24.camera.CaptureSource
+
 data class FilmLabSettings(
+    val captureSource: CaptureSource = CaptureSource.JPEG,
     val filmIntensity: Float = 1f,
     val pushPull: Float = 0f,
     val grainAmount: Float = 1f,

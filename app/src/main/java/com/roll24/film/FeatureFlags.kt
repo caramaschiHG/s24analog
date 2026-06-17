@@ -30,4 +30,14 @@ object FeatureFlags {
      * Enables orange mask removal for C-41 and Vision3 negative films.
      */
     var useOrangeMaskRemoval: Boolean = true
+
+    /**
+     * Enables GPU-accelerated HD tone-curve processing.
+     */
+    var useGpuHdCurve: Boolean = false
+
+    /**
+     * Enables GPU-accelerated color adjustment processing.
+     */
+    var useGpuColorAdjust: Boolean = false
 }
