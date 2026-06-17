@@ -9,6 +9,8 @@ import com.roll24.film.FeatureFlags
 import com.roll24.film.processors.*
 import com.roll24.image.CaptureMetadata
 import com.roll24.sensor.SensorSpectralResponse
+import com.roll24.spike.gpu.ColorGpuSpike
+import com.roll24.spike.gpu.ColorGpuParams
 import com.roll24.spike.gpu.HdCurveGpuSpike
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -223,12 +225,23 @@ class FilmDevelopmentEngine {
 
             // 8. Color adjustment (saturation, warmth, tint)
             if (!adjustedProfile.blackAndWhite) {
-                result = colorProcessor.adjust(
-                    result,
-                    adjustedProfile.saturation,
-                    adjustedProfile.warmth,
-                    adjustedProfile.tint
-                )
+                result = if (FeatureFlags.useGpuColorAdjust) {
+                    Log.d(TAG, "Color adjustment via GPU")
+                    val colorGpuParams = ColorGpuParams(
+                        adjustedProfile.saturation,
+                        adjustedProfile.warmth,
+                        adjustedProfile.tint
+                    )
+                    ColorGpuSpike().apply(result, colorGpuParams)
+                } else {
+                    Log.d(TAG, "Color adjustment via CPU")
+                    colorProcessor.adjust(
+                        result,
+                        adjustedProfile.saturation,
+                        adjustedProfile.warmth,
+                        adjustedProfile.tint
+                    )
+                }
             }
 
             // 9. B&W conversion if needed
