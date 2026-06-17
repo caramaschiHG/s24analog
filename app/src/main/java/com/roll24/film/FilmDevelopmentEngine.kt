@@ -9,6 +9,7 @@ import com.roll24.film.FeatureFlags
 import com.roll24.film.processors.*
 import com.roll24.image.CaptureMetadata
 import com.roll24.sensor.SensorSpectralResponse
+import com.roll24.spike.gpu.HdCurveGpuSpike
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -201,7 +202,13 @@ class FilmDevelopmentEngine {
             } else {
                 HdCurveParams.defaultFromProfile(adjustedProfile)
             }
-            result = hdCurveProcessor.process(result, hdParams)
+            result = if (FeatureFlags.useGpuHdCurve) {
+                Log.d(TAG, "H&D curve via GPU")
+                HdCurveGpuSpike().apply(result, hdParams)
+            } else {
+                Log.d(TAG, "H&D curve via CPU")
+                hdCurveProcessor.process(result, hdParams)
+            }
 
             // 6. Shadow control
             result = toneCurveProcessor.liftShadows(result, adjustedProfile.shadowLift)
