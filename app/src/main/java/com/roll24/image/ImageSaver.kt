@@ -46,7 +46,15 @@ object ImageSaver {
         label: String = buildUniqueLabel(profile),
         metadata: CaptureMetadata? = null
     ): AnalogSaveResult? {
-        val rawUri = rawBytes?.let {
+        // Only save rawBytes as DNG if they are actually DNG/TIFF format
+        val validatedRawBytes = rawBytes?.let { bytes ->
+            if (ImageByteFormatDetector.validateDng(bytes)) bytes else {
+                Log.e(TAG, "Refusing to save non-DNG bytes as .dng (detected: ${ImageByteFormatDetector.detect(bytes)})")
+                null
+            }
+        }
+
+        val rawUri = validatedRawBytes?.let {
             saveBytes(
                 context = context,
                 bytes = it,
@@ -319,6 +327,8 @@ object ImageSaver {
         metadata.aperture?.let { exif.setAttribute(ExifInterface.TAG_F_NUMBER, it.toString()) }
         metadata.whiteBalanceMode?.let { exif.setAttribute(ExifInterface.TAG_WHITE_BALANCE, it) }
         metadata.dateTimeOriginal?.let { exif.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, it) }
+        // Always write normal orientation - bitmap is already physically rotated
+        exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
     }
     
     /**

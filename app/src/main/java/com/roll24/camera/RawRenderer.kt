@@ -3,16 +3,34 @@ package com.roll24.camera
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
+import android.util.Log
+import com.roll24.film.FeatureFlags
+import com.roll24.image.OrientationUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.pow
 
-/** S24-first Bayer renderer. It keeps sensor values as floats until the final sRGB transfer. */
+/**
+ * S24-first Bayer renderer.
+ *
+ * Critical fix: white balance gains are applied by COLOR CHANNEL (red/green/blue),
+ * not by CFA position index. This ensures correct rendering for ANY CFA pattern
+ * (RGGB, GRBG, GBRG, BGGR).
+ */
 object RawRenderer {
+    private const val TAG = "RawRenderer"
+
     suspend fun render(frame: RawFrame): RawRenderResult = withContext(Dispatchers.Default) {
         val startedAt = SystemClock.elapsedRealtime()
         val pixels = IntArray(frame.width * frame.height)
         var clipped = 0L
+
+        // ─── Debug stats accumulators (sampled every 64th pixel for speed) ───────
+        var sensorRSum = 0.0; var sensorGSum = 0.0; var sensorBSum = 0.0
+        var linearRSum = 0.0; var linearGSum = 0.0; var linearBSum = 0.0
+        var sensorRMax = 0f; var sensorGMax = 0f; var sensorBMax = 0f
+        var linearRMax = 0f; var linearGMax = 0f; var linearBMax = 0f
+        var statSamples = 0L
 
         for (y in 0 until frame.height) {
             for (x in 0 until frame.width) {
@@ -41,11 +59,34 @@ object RawRenderer {
                     }
                 }
 
-                val m = frame.colorTransform
+                val m = if (FeatureFlags.transposeRawColorTransform) {
+                    // Transposed: swap rows/columns
+                    floatArrayOf(
+                        frame.colorTransform[0], frame.colorTransform[3], frame.colorTransform[6],
+                        frame.colorTransform[1], frame.colorTransform[4], frame.colorTransform[7],
+                        frame.colorTransform[2], frame.colorTransform[5], frame.colorTransform[8]
+                    )
+                } else {
+                    frame.colorTransform
+                }
                 val linearR = m[0] * sensorR + m[1] * sensorG + m[2] * sensorB
                 val linearG = m[3] * sensorR + m[4] * sensorG + m[5] * sensorB
                 val linearB = m[6] * sensorR + m[7] * sensorG + m[8] * sensorB
                 if (linearR > 1f || linearG > 1f || linearB > 1f) clipped++
+
+                // Stats sampling (every 64th pixel to avoid overhead)
+                if ((y * frame.width + x) and 63 == 0) {
+                    sensorRSum += sensorR; sensorGSum += sensorG; sensorBSum += sensorB
+                    linearRSum += linearR; linearGSum += linearG; linearBSum += linearB
+                    if (sensorR > sensorRMax) sensorRMax = sensorR
+                    if (sensorG > sensorGMax) sensorGMax = sensorG
+                    if (sensorB > sensorBMax) sensorBMax = sensorB
+                    if (linearR > linearRMax) linearRMax = linearR
+                    if (linearG > linearGMax) linearGMax = linearG
+                    if (linearB > linearBMax) linearBMax = linearB
+                    statSamples++
+                }
+
                 val r = toSrgb(highlightRolloff(linearR)).to8Bit()
                 val g = toSrgb(highlightRolloff(linearG)).to8Bit()
                 val b = toSrgb(highlightRolloff(linearB)).to8Bit()
@@ -53,11 +94,28 @@ object RawRenderer {
             }
         }
 
+        // ─── Log per-stage stats ─────────────────────────────────────────────────
+        val n = statSamples.coerceAtLeast(1).toFloat()
+        Log.i(TAG, "RawRendererStats stage=sensor " +
+            "avgR=%.3f avgG=%.3f avgB=%.3f maxR=%.3f maxG=%.3f maxB=%.3f".format(
+                sensorRSum / n, sensorGSum / n, sensorBSum / n,
+                sensorRMax, sensorGMax, sensorBMax
+            ))
+        Log.i(TAG, "RawRendererStats stage=linear " +
+            "avgR=%.3f avgG=%.3f avgB=%.3f maxR=%.3f maxG=%.3f maxB=%.3f".format(
+                linearRSum / n, linearGSum / n, linearBSum / n,
+                linearRMax, linearGMax, linearBMax
+            ))
+        Log.i(TAG, "RawRendererStats clipped=${clipped}/${pixels.size} " +
+            "(%.2f%%)".format(clipped * 100.0 / pixels.size.coerceAtLeast(1)))
+        // ─────────────────────────────────────────────────────────────────────────
+
+        val rotationDegrees = OrientationUtils.sanitizeRotationDegrees(frame.rotationDegrees)
         val unrotated = Bitmap.createBitmap(pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
-        val bitmap = if (frame.rotationDegrees == 0) {
+        val bitmap = if (rotationDegrees == 0) {
             unrotated
         } else {
-            val matrix = Matrix().apply { postRotate(frame.rotationDegrees.toFloat()) }
+            val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
             Bitmap.createBitmap(
                 unrotated,
                 0,
@@ -80,14 +138,22 @@ object RawRenderer {
         )
     }
 
+    /**
+     * Sample a single photosite, apply black level subtraction, white balance by COLOR,
+     * and lens shading correction.
+     *
+     * CRITICAL: WB gain is looked up by the COLOR of this photosite (red/green/blue),
+     * NOT by its CFA position index. This is the fix for green/radioactive output.
+     */
     private fun RawFrame.sample(x: Int, y: Int, color: Int): Float {
         val safeX = x.coerceIn(0, width - 1)
         val safeY = y.coerceIn(0, height - 1)
-        val cfaIndex = cfaIndex(safeX, safeY)
+        val cfaIdx = cfaIndex(safeX, safeY)
         val raw = samples[safeY * width + safeX].toInt() and 0xffff
-        val normalized = ((raw - blackLevels[cfaIndex]) /
-            (whiteLevel - blackLevels[cfaIndex]).coerceAtLeast(1f)).coerceAtLeast(0f)
-        return normalized * whiteBalanceGains[cfaIndex] * shadingGain(safeX, safeY, color)
+        val normalized = ((raw - blackLevels[cfaIdx]) /
+            (whiteLevel - blackLevels[cfaIdx]).coerceAtLeast(1f)).coerceAtLeast(0f)
+        // WB by COLOR, not by CFA position
+        return normalized * whiteBalanceGains.forColor(color) * shadingGain(safeX, safeY, color)
     }
 
     private fun RawFrame.average(x: Int, y: Int, wanted: Int, offsets: IntArray): Float {

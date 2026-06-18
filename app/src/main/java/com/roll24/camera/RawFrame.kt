@@ -5,6 +5,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.params.ColorSpaceTransform
 import android.hardware.camera2.params.LensShadingMap
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageProxy
@@ -15,7 +16,41 @@ enum class CfaPattern {
     RGGB,
     GRBG,
     GBRG,
-    BGGR
+    BGGR;
+
+    /**
+     * 2x2 matrix description for logging.
+     * E.g. for GBRG: "G B\nR G"
+     */
+    fun matrixDescription(): String = when (this) {
+        RGGB -> "R G\nG B"
+        GRBG -> "G R\nB G"
+        GBRG -> "G B\nR G"
+        BGGR -> "B G\nG R"
+    }
+}
+
+/**
+ * Typed white balance gains. Never indexed by CFA position.
+ * Always accessed by color channel to prevent CFA-order mismatch.
+ */
+data class WhiteBalanceGains(
+    val red: Float,
+    val greenEven: Float,
+    val greenOdd: Float,
+    val blue: Float
+) {
+    val greenAverage: Float get() = (greenEven + greenOdd) * 0.5f
+
+    /** Safe gain lookup by color constant (RED=0, GREEN=1, BLUE=2). */
+    fun forColor(color: Int): Float = when (color) {
+        0 -> red       // RED
+        2 -> blue      // BLUE
+        else -> greenAverage // GREEN
+    }
+
+    override fun toString(): String =
+        "WB(r=%.4f gEven=%.4f gOdd=%.4f b=%.4f)".format(red, greenEven, greenOdd, blue)
 }
 
 /** Immutable copy of a RAW_SENSOR frame and the metadata needed to render it. */
@@ -26,7 +61,7 @@ data class RawFrame(
     val cfaPattern: CfaPattern,
     val blackLevels: FloatArray,
     val whiteLevel: Float,
-    val whiteBalanceGains: FloatArray,
+    val whiteBalanceGains: WhiteBalanceGains,
     val colorTransform: FloatArray,
     val lensShading: FloatArray?,
     val lensShadingWidth: Int,
@@ -37,11 +72,12 @@ data class RawFrame(
     init {
         require(samples.size == width * height)
         require(blackLevels.size == 4)
-        require(whiteBalanceGains.size == 4)
         require(colorTransform.size == 9)
     }
 
     companion object {
+        private const val TAG = "RawFrame"
+
         @OptIn(ExperimentalGetImage::class)
         fun fromImageProxy(
             image: ImageProxy,
@@ -63,13 +99,17 @@ data class RawFrame(
             val black = FloatArray(4) { index ->
                 blackPattern?.getOffsetForIndex(index % 2, index / 2)?.toFloat() ?: 0f
             }
+
             val gains = result.get(CaptureResult.COLOR_CORRECTION_GAINS)
-            val whiteBalance = floatArrayOf(
-                gains?.red ?: 1f,
-                gains?.greenEven ?: 1f,
-                gains?.greenOdd ?: 1f,
-                gains?.blue ?: 1f
+            val whiteBalance = WhiteBalanceGains(
+                red = gains?.red ?: 1f,
+                greenEven = gains?.greenEven ?: 1f,
+                greenOdd = gains?.greenOdd ?: 1f,
+                blue = gains?.blue ?: 1f
             )
+
+            val cfa = characteristics.cfaPattern()
+
             val transform = result.get(CaptureResult.COLOR_CORRECTION_TRANSFORM)?.toFloatArray()
                 ?: characteristics.get(CameraCharacteristics.SENSOR_FORWARD_MATRIX1)
                     ?.toFloatArray()
@@ -77,11 +117,20 @@ data class RawFrame(
                 ?: IDENTITY_MATRIX.copyOf()
             val shadingMap = result.get(CaptureResult.STATISTICS_LENS_SHADING_CORRECTION_MAP)
 
+            // ─── Diagnostic logging ──────────────────────────────────────────────
+            Log.i(TAG, "RawFrame cfaPattern=${cfa.name} $whiteBalance")
+            Log.i(TAG, "CFA matrix:\n${cfa.matrixDescription()}")
+            Log.i(TAG, "ColorTransform:\n${formatMatrix(transform)}")
+            Log.i(TAG, "BlackLevels=[${black.joinToString()}] WhiteLevel=${
+                characteristics.get(CameraCharacteristics.SENSOR_INFO_WHITE_LEVEL) ?: 1023
+            }")
+            // ─────────────────────────────────────────────────────────────────────
+
             return RawFrame(
                 width = image.width,
                 height = image.height,
                 samples = samples,
-                cfaPattern = characteristics.cfaPattern(),
+                cfaPattern = cfa,
                 blackLevels = black,
                 whiteLevel = (characteristics.get(CameraCharacteristics.SENSOR_INFO_WHITE_LEVEL) ?: 1023).toFloat(),
                 whiteBalanceGains = whiteBalance,
@@ -104,8 +153,11 @@ data class RawFrame(
         }
 
         private fun ColorSpaceTransform.toFloatArray(): FloatArray {
+            // Android API: getElement(column, row). We store row-major.
             return FloatArray(9) { index ->
-                val rational = getElement(index % 3, index / 3)
+                val column = index % 3
+                val row = index / 3
+                val rational = getElement(column, row)
                 rational.numerator.toFloat() / rational.denominator.toFloat()
             }
         }
@@ -131,6 +183,13 @@ data class RawFrame(
             val channel = index % 4
             val cell = index / 4
             getGainFactor(channel, cell % columnCount, cell / columnCount)
+        }
+
+        private fun formatMatrix(m: FloatArray): String {
+            require(m.size == 9)
+            return "[ %+.4f  %+.4f  %+.4f\n  %+.4f  %+.4f  %+.4f\n  %+.4f  %+.4f  %+.4f ]".format(
+                m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]
+            )
         }
 
         private val IDENTITY_MATRIX = floatArrayOf(

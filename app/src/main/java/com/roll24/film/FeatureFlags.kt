@@ -43,4 +43,11 @@ object FeatureFlags {
      * Enables GPU-accelerated color adjustment processing.
      */
     var useGpuColorAdjust: Boolean = false
+
+    /**
+     * If true, transpose the RAW color correction matrix before applying.
+     * Only enable if diagnostic logs show the matrix produces wrong channel mapping.
+     * Default: false (matrix order is already row-major as documented by Android API).
+     */
+    var transposeRawColorTransform: Boolean = false
 }
