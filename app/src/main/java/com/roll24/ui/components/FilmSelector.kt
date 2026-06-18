@@ -12,12 +12,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import com.roll24.R
 import com.roll24.film.FilmProfile
 import com.roll24.film.FilmType
@@ -105,19 +114,41 @@ private fun FilmCard(
             .clip(RoundedCornerShape(Roll24Radius.Md))
             .background(Roll24Colors.Panel)
             .border(borderWidth, borderColor, RoundedCornerShape(Roll24Radius.Md))
-            .clickable(onClick = onClick),
+            .semantics { selected = isSelected }
+            .clickable(role = Role.RadioButton, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box {
-            // Profile card image
-            Image(
-                painter = painterResource(id = cardDrawable),
-                contentDescription = profile.name,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp)
-                    .clip(RoundedCornerShape(topStart = Roll24Radius.Md, topEnd = Roll24Radius.Md))
-            )
+            // Profile card image — load via Drawable so shape/gradient drawables work
+            // (Compose painterResource only supports vector/raster, not GradientDrawable).
+            val context = LocalContext.current
+            val density = LocalDensity.current
+            val cardWidthPx = with(density) { 120.dp.roundToPx() }
+            val cardHeightPx = with(density) { 80.dp.roundToPx() }
+            val cardBitmap = remember(cardDrawable, cardWidthPx, cardHeightPx) {
+                ContextCompat.getDrawable(context, cardDrawable)
+                    ?.toBitmap(width = cardWidthPx, height = cardHeightPx)
+                    ?.asImageBitmap()
+            }
+            if (cardBitmap != null) {
+                Image(
+                    bitmap = cardBitmap,
+                    contentDescription = profile.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .clip(RoundedCornerShape(topStart = Roll24Radius.Md, topEnd = Roll24Radius.Md))
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .clip(RoundedCornerShape(topStart = Roll24Radius.Md, topEnd = Roll24Radius.Md))
+                        .background(Roll24Colors.Panel)
+                )
+            }
 
             // Film-type badge (C41 / E6 / BW / V3)
             FilmTypeBadge(
@@ -146,7 +177,7 @@ private fun FilmTypeBadge(
     val label = when (filmType) {
         FilmType.C41 -> "C41"
         FilmType.E6 -> "E6"
-        FilmType.BLACK_AND_WHITE -> "BW"
+        FilmType.BLACK_AND_WHITE -> "PB"
         FilmType.VISION3 -> "V3"
     }
 

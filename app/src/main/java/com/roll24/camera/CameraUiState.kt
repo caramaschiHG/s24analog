@@ -75,5 +75,6 @@ data class CameraUiState(
     val shutterFlash: Boolean = false,
     val lastSavedCapture: SavedCapture? = null,
     val errorMessage: String? = null,
-    val visibleError: String? = null
+    val visibleError: String? = null,
+    val visibleNotice: String? = null
 )

@@ -9,6 +9,9 @@ package com.roll24.film
  * runs when a matched S24 Ultra sensor is present.
  */
 object FeatureFlags {
+    /** Master switch for the float, physically ordered development pipeline. */
+    var usePhysicalPipeline: Boolean = true
+
     /**
      * Master switch for the Wave-3 physical film emulation pipeline.
      *

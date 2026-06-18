@@ -16,3 +16,10 @@ local.properties
 *.dex
 *.class
 *.log
+
+# Temporary and system-specific files
+.codex-remote-attachments/
+.sisyphus/
+.agents/
+.gemini/
+.planning/

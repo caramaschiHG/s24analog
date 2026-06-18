@@ -57,15 +57,7 @@ object ImageSaver {
             )
         }
 
-        val developedUri = saveBitmap(
-            context = context,
-            bitmap = developed,
-            filename = "${label}_developed.jpg",
-            relativeFolder = "Roll24/Developed",
-            description = "Roll24 developed - ${profile.name}",
-            metadata = metadata
-        )
-
+        // SINGLE photo visible in the user's gallery: the developed JPG with EXIF.
         val galleryUri = saveBitmap(
             context = context,
             bitmap = developed,
@@ -75,32 +67,56 @@ object ImageSaver {
             metadata = metadata
         )
 
-        val negativeUri = saveBitmap(
+        // Negative and thumbnail stay in app-private storage so Roll24's own UI can
+        // show them, but they do NOT clutter the user's system gallery.
+        val negativeUri = saveBitmapToAppPrivate(
             context = context,
             bitmap = negative,
             filename = "${label}_negative.jpg",
-            relativeFolder = "Roll24/Negatives",
-            description = "Roll24 negative - ${profile.name}"
+            subFolder = "negatives"
         )
 
-        val thumbnailUri = saveBitmap(
+        val thumbnailUri = saveBitmapToAppPrivate(
             context = context,
             bitmap = createThumbnail(developed),
             filename = "${label}_thumb.jpg",
-            relativeFolder = "Roll24/Thumbs",
-            description = "Roll24 thumbnail - ${profile.name}"
+            subFolder = "thumbs"
         )
 
-        if (developedUri == null && negativeUri == null && rawUri == null) return null
+        if (galleryUri == null && rawUri == null) return null
 
         return AnalogSaveResult(
             rawUri = rawUri,
             negativeUri = negativeUri,
-            developedUri = developedUri,
+            // developedUri intentionally aliases the gallery file - the developed
+            // photo IS the gallery photo (avoid saving the same bitmap twice).
+            developedUri = galleryUri,
             thumbnailUri = thumbnailUri,
             galleryUri = galleryUri,
             label = label
         )
+    }
+
+    private fun saveBitmapToAppPrivate(
+        context: Context,
+        bitmap: Bitmap,
+        filename: String,
+        subFolder: String
+    ): Uri? {
+        return try {
+            val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+                ?: context.filesDir
+            val targetDir = File(baseDir, subFolder)
+            if (!targetDir.exists()) targetDir.mkdirs()
+            val file = File(targetDir, filename)
+            file.outputStream().use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            }
+            Uri.fromFile(file)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save bitmap to app-private: $filename", e)
+            null
+        }
     }
     
     /**

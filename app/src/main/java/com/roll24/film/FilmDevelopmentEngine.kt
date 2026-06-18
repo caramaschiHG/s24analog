@@ -7,6 +7,7 @@ import com.roll24.camera.CaptureSource
 import com.roll24.camera.SensorProfile
 import com.roll24.film.FeatureFlags
 import com.roll24.film.processors.*
+import com.roll24.film.pipeline.FilmPipelineEngine
 import com.roll24.image.CaptureMetadata
 import com.roll24.sensor.SensorSpectralResponse
 import com.roll24.spike.gpu.ColorGpuSpike
@@ -30,6 +31,7 @@ class FilmDevelopmentEngine {
     private val softnessProcessor = SoftnessProcessor()
     private val hdCurveProcessor = HdCurveProcessor()
     private val orangeMaskProcessor = OrangeMaskProcessor()
+    private val physicalPipeline = FilmPipelineEngine()
 
     data class DevelopedPair(
         val negative: Bitmap,
@@ -44,8 +46,55 @@ class FilmDevelopmentEngine {
         captureIso: Int? = null,
         captureMetadata: CaptureMetadata? = null
     ): DevelopedPair {
+        if (physicalPipelineEnabled()) {
+            return try {
+                val result = physicalPipeline.process(
+                    bitmap,
+                    profile.withLabSettings(labSettings),
+                    labSettings,
+                    captureIso ?: captureMetadata?.iso,
+                    ProcessingResolution.FULL,
+                    captureMetadata
+                )
+                DevelopedPair(result.negative, result.developed)
+            } catch (error: RuntimeException) {
+                Log.e(TAG, "Physical pipeline failed; using legacy pair", error)
+                legacyPair(bitmap, profile, labSettings, sensorProfile, captureIso, captureMetadata)
+            } catch (error: OutOfMemoryError) {
+                Log.e(TAG, "Physical pipeline exhausted memory; retrying pair at half resolution", error)
+                System.gc()
+                val result = physicalPipeline.process(
+                    bitmap,
+                    profile.withLabSettings(labSettings),
+                    labSettings,
+                    captureIso ?: captureMetadata?.iso,
+                    ProcessingResolution.HALF,
+                    captureMetadata
+                )
+                DevelopedPair(result.negative, result.developed)
+            }
+        }
+        return legacyPair(bitmap, profile, labSettings, sensorProfile, captureIso, captureMetadata)
+    }
+
+    private fun legacyPair(
+        bitmap: Bitmap,
+        profile: FilmProfile,
+        labSettings: FilmLabSettings,
+        sensorProfile: SensorProfile?,
+        captureIso: Int?,
+        captureMetadata: CaptureMetadata?
+    ): DevelopedPair {
         val negative = createNegative(bitmap, profile, labSettings)
-        val developed = develop(bitmap, profile, labSettings, sensorProfile, captureIso, captureMetadata = captureMetadata)
+        val developed = developInternal(
+            bitmap,
+            profile,
+            labSettings,
+            sensorProfile,
+            captureIso ?: captureMetadata?.iso,
+            ProcessingResolution.FULL,
+            FeatureFlags.useNewPipeline
+        )
         return DevelopedPair(negative = negative, developed = developed)
     }
 
@@ -76,6 +125,9 @@ class FilmDevelopmentEngine {
         profile: FilmProfile,
         labSettings: FilmLabSettings
     ): Bitmap {
+        if (physicalPipelineEnabled()) {
+            return runPhysical(bitmap, profile, labSettings, null, ProcessingResolution.FULL, null)
+        }
         return developInternal(
             bitmap = bitmap,
             profile = profile,
@@ -97,6 +149,9 @@ class FilmDevelopmentEngine {
         labSettings: FilmLabSettings,
         resolution: ProcessingResolution
     ): Bitmap {
+        if (physicalPipelineEnabled()) {
+            return runPhysical(bitmap, profile, labSettings, null, resolution, null)
+        }
         return developInternal(
             bitmap = bitmap,
             profile = profile,
@@ -115,7 +170,15 @@ class FilmDevelopmentEngine {
      * disabled, reproducing the pre-physical-emulation look.
      */
     fun developLegacy(bitmap: Bitmap, profile: FilmProfile): Bitmap {
-        return develop(bitmap, profile, FilmLabSettings(), ProcessingResolution.FULL)
+        return developInternal(
+            bitmap,
+            profile,
+            FilmLabSettings(),
+            sensorProfile = null,
+            captureIso = null,
+            resolution = ProcessingResolution.FULL,
+            useNewPipeline = false
+        )
     }
 
     /**
@@ -136,6 +199,9 @@ class FilmDevelopmentEngine {
         captureMetadata: CaptureMetadata? = null
     ): Bitmap {
         val effectiveIso = captureIso ?: captureMetadata?.iso
+        if (physicalPipelineEnabled()) {
+            return runPhysical(bitmap, profile, labSettings, effectiveIso, resolution, captureMetadata)
+        }
         return developInternal(
             bitmap = bitmap,
             profile = profile,
@@ -145,6 +211,41 @@ class FilmDevelopmentEngine {
             resolution = resolution,
             useNewPipeline = FeatureFlags.useNewPipeline
         )
+    }
+
+    private fun physicalPipelineEnabled(): Boolean =
+        FeatureFlags.usePhysicalPipeline && FeatureFlags.useNewPipeline
+
+    private fun runPhysical(
+        bitmap: Bitmap,
+        profile: FilmProfile,
+        labSettings: FilmLabSettings,
+        captureIso: Int?,
+        resolution: ProcessingResolution,
+        captureMetadata: CaptureMetadata?
+    ): Bitmap = try {
+        physicalPipeline.process(
+            bitmap,
+            profile.withLabSettings(labSettings),
+            labSettings,
+            captureIso,
+            resolution,
+            captureMetadata
+        ).developed
+    } catch (error: RuntimeException) {
+        Log.e(TAG, "Physical pipeline failed; using legacy development", error)
+        developInternal(bitmap, profile, labSettings, null, captureIso, resolution, false)
+    } catch (error: OutOfMemoryError) {
+        Log.e(TAG, "Physical pipeline exhausted memory; retrying at half resolution", error)
+        System.gc()
+        physicalPipeline.process(
+            bitmap,
+            profile.withLabSettings(labSettings),
+            labSettings,
+            captureIso,
+            ProcessingResolution.HALF,
+            captureMetadata
+        ).developed
     }
 
     private fun developInternal(

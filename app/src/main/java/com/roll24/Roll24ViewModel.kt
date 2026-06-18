@@ -10,11 +10,14 @@ import com.roll24.camera.CameraSettings
 import com.roll24.camera.CaptureJob
 import com.roll24.camera.CaptureJobStage
 import com.roll24.camera.CaptureOutputUris
+import com.roll24.camera.CaptureSource
 import com.roll24.camera.CameraUiState
 import com.roll24.camera.GridMode
 import com.roll24.camera.Roll24FlashMode
 import com.roll24.camera.SavedCapture
 import com.roll24.camera.SensorProfile
+import com.roll24.camera.RawCaptureResult
+import com.roll24.camera.RawRenderer
 import com.roll24.camera.TimerMode
 import com.roll24.camera.ViewfinderAspect
 import com.roll24.film.FilmDevelopmentEngine
@@ -25,16 +28,15 @@ import com.roll24.gallery.CaptureRecord
 import com.roll24.gallery.CaptureStatus
 import com.roll24.gallery.Roll24CaptureRepository
 import com.roll24.image.BitmapTransforms
-import com.roll24.image.CaptureMetadata
 import com.roll24.image.ImageSaver
-import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.File
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class Roll24ViewModel : ViewModel() {
 
@@ -62,6 +64,7 @@ class Roll24ViewModel : ViewModel() {
 
     private var galleryStarted = false
     private val pendingRecipes = mutableMapOf<String, CaptureRecipeSnapshot>()
+    private val developmentMutex = Mutex()
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -297,7 +300,7 @@ class Roll24ViewModel : ViewModel() {
         }
     }
 
-    fun developAndSaveCapture(context: Context, capturedFile: File, jobId: String) {
+    fun developAndSaveCapture(context: Context, capture: RawCaptureResult, jobId: String) {
         val appContext = context.applicationContext
         val snapshot = pendingRecipes[jobId] ?: CaptureRecipeSnapshot(
             profile = _selectedProfile.value,
@@ -307,7 +310,6 @@ class Roll24ViewModel : ViewModel() {
         )
         val profile = snapshot.profile
         val cameraSettings = snapshot.cameraSettings
-        val labSettings = snapshot.labSettings
 
         updateJob(
             jobId = jobId,
@@ -320,27 +322,34 @@ class Roll24ViewModel : ViewModel() {
                 isDeveloping = true,
                 queueDepth = current.captureJobs.count { it.stage == CaptureJobStage.CAPTURING || it.stage == CaptureJobStage.DEVELOPING || it.stage == CaptureJobStage.QUEUED },
                 errorMessage = null,
-                visibleError = null
+                visibleError = null,
+                visibleNotice = null
             )
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            val decoded = BitmapTransforms.decodeJpegWithExif(capturedFile)
-                ?: error("Nao foi possivel abrir a foto capturada")
-            val metadata = runCatching {
-                CaptureMetadata.fromExifInterface(
-                    ExifInterface(capturedFile),
-                    decoded.width,
-                    decoded.height
-                ).also {
-                    Log.d("CaptureMetadata", "Extracted metadata: $it")
+            developmentMutex.withLock {
+                Log.d("CaptureQueue", "Development started job=$jobId source=${capture.source}")
+                try {
+                var fallbackReason = capture.fallbackReason
+                val rawRender = capture.rawFrame?.let { frame ->
+                    runCatching { RawRenderer.render(frame) }
+                        .onSuccess { Log.d("RawRenderer", "Rendered ${it.metrics}") }
+                        .onFailure { error ->
+                            Log.e("RawRenderer", "RAW render failed; using simultaneous JPEG", error)
+                            fallbackReason = error.message ?: "Falha ao revelar RAW"
+                        }
+                        .getOrNull()
                 }
-            }.getOrElse {
-                Log.w("CaptureMetadata", "Failed to extract EXIF metadata", it)
-                null
-            }
-
-            try {
+                val decoded = rawRender?.bitmap ?: capture.toJpegBitmap()
+                    ?: error("Nao foi possivel abrir a foto capturada")
+                val effectiveSource = if (rawRender != null) CaptureSource.RAW_DNG else CaptureSource.JPEG
+                val metadata = rawRender?.metadata ?: capture.metadata
+                val labSettings = snapshot.labSettings.copy(
+                    captureSource = effectiveSource,
+                    inputEncoding = capture.encoding
+                )
+                val usedFallback = effectiveSource != CaptureSource.RAW_DNG
                 Roll24CaptureRepository.get(appContext).upsert(
                     CaptureRecord(
                         id = jobId,
@@ -357,7 +366,7 @@ class Roll24ViewModel : ViewModel() {
                         galleryUri = null,
                         status = CaptureStatus.DEVELOPING,
                         error = null,
-                        usedFallback = snapshot.lens?.supportsRaw != true,
+                        usedFallback = usedFallback,
                         metadata = metadata
                     )
                 )
@@ -377,6 +386,7 @@ class Roll24ViewModel : ViewModel() {
                     negative = pair.negative,
                     developed = pair.developed,
                     profile = profile,
+                    rawBytes = capture.rawBytes,
                     label = jobId,
                     metadata = metadata
                 ) ?: error("Nao foi possivel salvar na galeria")
@@ -397,7 +407,7 @@ class Roll24ViewModel : ViewModel() {
                         galleryUri = saved.galleryUri?.toString(),
                         status = CaptureStatus.SAVED,
                         error = null,
-                        usedFallback = snapshot.lens?.supportsRaw != true,
+                        usedFallback = usedFallback,
                         metadata = metadata
                     )
                 )
@@ -426,10 +436,11 @@ class Roll24ViewModel : ViewModel() {
                             thumbnailUri = saved.thumbnailUri,
                             galleryUri = saved.galleryUri,
                             label = saved.label
-                        )
+                        ),
+                        visibleNotice = fallbackReason?.let { "RAW indisponivel; JPEG utilizado" }
                     )
                 }
-            } catch (e: Exception) {
+                } catch (e: Exception) {
                 val message = e.message ?: "Falha ao revelar a foto"
                 Roll24CaptureRepository.get(appContext).upsert(
                     CaptureRecord(
@@ -447,7 +458,7 @@ class Roll24ViewModel : ViewModel() {
                         galleryUri = null,
                         status = CaptureStatus.FAILED,
                         error = message,
-                        usedFallback = snapshot.lens?.supportsRaw != true
+                        usedFallback = capture.source != CaptureSource.RAW_DNG
                     )
                 )
                 updateJob(jobId, CaptureJobStage.FAILED, 1f, error = message)
@@ -460,8 +471,7 @@ class Roll24ViewModel : ViewModel() {
                         visibleError = message
                     )
                 }
-            } finally {
-                capturedFile.delete()
+                }
             }
         }
     }

@@ -1,7 +1,11 @@
 package com.roll24.image
 
 import androidx.exifinterface.media.ExifInterface
+import android.hardware.camera2.CaptureResult
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Film-relevant EXIF metadata extracted from a captured image.
@@ -63,5 +67,27 @@ data class CaptureMetadata(
             sourceWidth = width,
             sourceHeight = height
         )
+
+        fun fromCamera2(
+            result: CaptureResult,
+            width: Int,
+            height: Int
+        ): CaptureMetadata {
+            val exposureNanos = result.get(CaptureResult.SENSOR_EXPOSURE_TIME)
+            return CaptureMetadata(
+                iso = result.get(CaptureResult.SENSOR_SENSITIVITY),
+                exposureTime = exposureNanos?.let { nanos ->
+                    val seconds = nanos / 1_000_000_000.0
+                    if (seconds >= 1.0) "%.3f".format(Locale.US, seconds)
+                    else "1/%d".format(Locale.US, (1.0 / seconds).toInt().coerceAtLeast(1))
+                },
+                focalLengthMm = result.get(CaptureResult.LENS_FOCAL_LENGTH),
+                aperture = result.get(CaptureResult.LENS_APERTURE),
+                whiteBalanceMode = result.get(CaptureResult.CONTROL_AWB_MODE)?.toString(),
+                dateTimeOriginal = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).format(Date()),
+                sourceWidth = width,
+                sourceHeight = height
+            )
+        }
     }
 }

@@ -2,11 +2,12 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.roll24"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.roll24"
@@ -44,10 +45,6 @@ android {
         compose = true
     }
     
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
-    
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -57,8 +54,8 @@ android {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
-    val cameraxVersion = "1.3.4"
-    val roomVersion = "2.6.1"
+    val cameraxVersion = "1.6.1"
+    val roomVersion = "2.8.4"
     implementation(composeBom)
 
     // Core
@@ -79,6 +76,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
 
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
@@ -104,4 +102,9 @@ dependencies {
     // Unit tests with Robolectric for Android Bitmap support
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.11.1")
+
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }

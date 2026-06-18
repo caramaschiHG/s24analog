@@ -27,10 +27,19 @@ object CameraSensorScanner {
                 Log.d(TAG, "RAW probe: $probeResult")
             }
 
-            candidates += buildProfile(cameraId, null, chars)
+            // If the logical camera exposes physical sub-cameras (S24 Ultra:
+            // 0.6x, 1x, 3x, 5x), enumerate ONLY the physicals to avoid showing
+            // the logical "primary" camera as a duplicate of its main lens.
+            val physicalIds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                chars.physicalCameraIds
+            } else {
+                emptySet()
+            }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                for (physicalId in chars.physicalCameraIds) {
+            if (physicalIds.isEmpty()) {
+                candidates += buildProfile(cameraId, null, chars)
+            } else {
+                for (physicalId in physicalIds) {
                     val physical = runCatching {
                         manager.getCameraCharacteristics(physicalId)
                     }.getOrNull()
@@ -42,7 +51,7 @@ object CameraSensorScanner {
         }
 
         return candidates
-            .distinctBy { "${it.cameraId}:${it.physicalId.orEmpty()}:${it.focalLengthMm}" }
+            .distinctBy { it.lensLabel }
             .sortedWith(compareBy<SensorProfile> { it.focalLengthMm ?: Float.MAX_VALUE }.thenBy { it.cameraId })
     }
 

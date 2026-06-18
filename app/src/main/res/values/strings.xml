@@ -1,11 +1,67 @@
 <resources>
     <string name="app_name">Roll24</string>
-    <string name="camera_permission_required">Camera permission is required to use Roll24</string>
-    <string name="grant_permission">Grant Permission</string>
-    <string name="capture">Capture</string>
-    <string name="save">Save</string>
-    <string name="discard">Discard</string>
-    <string name="processing">Processing...</string>
-    <string name="photo_saved">Photo saved</string>
-    <string name="photo_discarded">Photo discarded</string>
+    <string name="camera_permission_title">Fotografia começa com acesso à câmera</string>
+    <string name="camera_permission_required">O Roll24 usa a câmera para enquadrar, capturar e revelar suas fotografias. Nenhuma imagem é enviada sem sua ação.</string>
+    <string name="grant_permission">Permitir acesso à câmera</string>
+    <string name="permission_note">Você pode alterar essa permissão nos ajustes do aparelho.</string>
+
+    <string name="capture">Capturar</string>
+    <string name="save">Salvar</string>
+    <string name="discard">Descartar</string>
+    <string name="processing">Revelando…</string>
+    <string name="photo_saved">Fotografia salva</string>
+    <string name="photo_discarded">Fotografia descartada</string>
+    <string name="close">Fechar</string>
+    <string name="remove_local">Remover do aparelho</string>
+
+    <string name="camera_exposure_summary">ISO %1$d · EV %2$.1f</string>
+    <string name="status_ready">Pronta</string>
+    <string name="status_developing">Revelando</string>
+    <string name="capture_saved">Salva: %1$s</string>
+    <string name="capture_progress">Revelando · %1$d%%</string>
+    <string name="gallery">Galeria</string>
+    <string name="camera_controls">Câmera</string>
+    <string name="lab">Lab</string>
+    <string name="film">Filme</string>
+    <string name="film_lab">Laboratório</string>
+    <string name="choose_film">Escolher filme</string>
+    <string name="panel_hint">Deslize para explorar os ajustes</string>
+
+    <string name="frame">Moldura</string>
+    <string name="grid">Grade</string>
+    <string name="flash">Flash</string>
+    <string name="timer">Temporizador</string>
+    <string name="exposure">Exposição</string>
+    <string name="film_intensity">Intensidade do filme</string>
+    <string name="push_pull">Push / Pull</string>
+    <string name="grain">Grão</string>
+    <string name="halation">Halation</string>
+    <string name="bloom">Bloom</string>
+    <string name="vignette">Vinheta</string>
+    <string name="warmth">Calor</string>
+    <string name="contrast">Contraste</string>
+    <string name="slider_range">Faixa: %1$.1f a %2$.1f</string>
+
+    <string name="off">Desligado</string>
+    <string name="on">Ligado</string>
+    <string name="auto">Automático</string>
+    <string name="thirds">Terços</string>
+    <string name="cross">Cruz</string>
+    <string name="diagonals">Diagonais</string>
+    <string name="three_seconds">3 s</string>
+    <string name="ten_seconds">10 s</string>
+
+    <string name="gallery_title">Fotografias</string>
+    <plurals name="local_captures">
+        <item quantity="one">%d captura local</item>
+        <item quantity="other">%d capturas locais</item>
+    </plurals>
+    <string name="developed">Reveladas</string>
+    <string name="failures">Falhas</string>
+    <string name="gallery_empty_title">Nenhuma fotografia por aqui</string>
+    <string name="gallery_empty_body">Suas capturas reveladas aparecerão nesta coleção.</string>
+    <string name="gallery_failed_empty_body">Falhas de processamento aparecerão aqui para diagnóstico.</string>
+    <string name="thumbnail">Miniatura da fotografia</string>
+    <string name="fallback">Processamento alternativo</string>
+    <string name="lens_unknown">lente não identificada</string>
 </resources>
