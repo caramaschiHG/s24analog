@@ -109,7 +109,39 @@ sealed class Roll24HapticEffect {
         override val timings = longArrayOf(0, 10)
         override val amplitudes = intArrayOf(0, 50)
     }
-    
+
+    // ─── Zoom haptics ───────────────────────────────────────────────────────────
+    // One click per mm. Real click feel. Lens switch = grave thud.
+
+    /**
+     * Real click - one per millimeter.
+     * Short, sharp, definite. Like a detent notch on a physical dial.
+     * 6ms at amplitude 55 - crisp and unmistakable but not heavy.
+     */
+    object ZoomFineStep : Roll24HapticEffect() {
+        override val timings = longArrayOf(0, 6)
+        override val amplitudes = intArrayOf(0, 55)
+    }
+
+    /**
+     * Deep/grave thud - lens switch only (crossing 0.6x/1x/3x/5x).
+     * Longer, lower, heavier. Like a mechanical lens module engaging.
+     * 12ms at amplitude 180 - unmistakably different from mm clicks.
+     */
+    object ZoomOpticalAnchor : Roll24HapticEffect() {
+        override val timings = longArrayOf(0, 12)
+        override val amplitudes = intArrayOf(0, 180)
+    }
+
+    /**
+     * End-stop - zoom limit reached.
+     * Firm single tap. Not an error, just "no more travel".
+     */
+    object ZoomBoundary : Roll24HapticEffect() {
+        override val timings = longArrayOf(0, 8)
+        override val amplitudes = intArrayOf(0, 100)
+    }
+
     /**
      * Verifica se pode usar primitivas avançadas (Android 8+)
      */

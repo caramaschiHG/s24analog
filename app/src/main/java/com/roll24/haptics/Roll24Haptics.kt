@@ -114,6 +114,35 @@ class Roll24Haptics(private val context: Context) {
     fun discard() {
         vibrate(Roll24HapticEffect.Discard)
     }
+
+    // ─── Zoom haptics ───────────────────────────────────────────────────────────
+
+    /**
+     * Micro tick fino - passo de zoom.
+     * Disparado a cada intervalo de zoom durante pinch.
+     * Muito sutil, como catraca de anel de lente.
+     */
+    fun zoomFineStep() {
+        vibrate(Roll24HapticEffect.ZoomFineStep)
+    }
+
+    /**
+     * Clique seco premium - encaixe em anchor óptico.
+     * Disparado ao chegar em 0.6x, 1x, 3x ou 5x.
+     * Mais forte, como detent de lente mecânica.
+     */
+    fun zoomOpticalAnchor() {
+        vibrate(Roll24HapticEffect.ZoomOpticalAnchor)
+    }
+
+    /**
+     * Limite de curso - fim do zoom.
+     * Disparado ao atingir min ou max zoom.
+     * Sensação de batida de limite físico.
+     */
+    fun zoomBoundary() {
+        vibrate(Roll24HapticEffect.ZoomBoundary)
+    }
     
     /**
      * Executa vibração com efeito específico

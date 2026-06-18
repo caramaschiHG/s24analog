@@ -27,12 +27,14 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -49,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
@@ -57,8 +60,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.roll24.Roll24ViewModel
+import com.roll24.camera.zoom.S24UltraZoomController
+import com.roll24.camera.zoom.ZoomHapticsController
+import com.roll24.camera.zoom.ZoomUiState
 import com.roll24.gallery.LocalGalleryScreen
 import com.roll24.haptics.rememberRoll24Haptics
+import com.roll24.ui.components.ZoomReadoutOverlay
 import com.roll24.ui.theme.Roll24Colors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -90,6 +97,11 @@ fun CameraScreen(
     val captureResultStore = remember { CaptureResultStore() }
     var activePanel by rememberSaveable { mutableStateOf(CameraPanel.NONE) }
     var showGallery by rememberSaveable { mutableStateOf(false) }
+
+    // Zoom controller - single source of truth for zoom state
+    val zoomController = remember { S24UltraZoomController() }
+    val zoomHapticsController = remember { ZoomHapticsController(haptics) }
+    val zoomState by zoomController.zoomState.collectAsState()
 
     BackHandler(enabled = showGallery) {
         showGallery = false
@@ -173,6 +185,9 @@ fun CameraScreen(
             Log.w("CameraScreen", "Could not resolve Camera2 characteristics", it)
         }.getOrNull()
 
+        // Attach zoom controller to the new camera instance
+        zoomController.attachCamera(boundCamera)
+
         // Apply zoom ratio matching the active lens label (0.6x / 1x / 3x / 5x).
         // The system uses the closest physical sub-camera for the requested zoom.
         cameraUiState.activeLens?.lensLabel?.let { label ->
@@ -183,11 +198,7 @@ fun CameraScreen(
                 "5x" -> 5f
                 else -> 1f
             }
-            runCatching {
-                boundCamera.cameraControl.setZoomRatio(zoom)
-            }.onFailure {
-                Log.w("CameraScreen", "setZoomRatio($zoom) failed for $label", it)
-            }
+            zoomController.applyZoom(zoom, isUserGesture = false)
         }
 
         viewModel.setCameraReady(true)
@@ -221,6 +232,18 @@ fun CameraScreen(
         }
     }
 
+    // Zoom overlay auto-hide: show during pinch, persist 1200ms after release for premium feel
+    var zoomOverlayVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(zoomState.isUserZooming) {
+        if (zoomState.isUserZooming) {
+            zoomOverlayVisible = true
+        } else {
+            // Longer linger for elegant dismissal (matches overlay exit animation)
+            delay(1200)
+            zoomOverlayVisible = false
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -229,10 +252,21 @@ fun CameraScreen(
         AnalogViewfinder(
             settings = cameraSettings,
             camera = camera,
+            zoomController = zoomController,
+            zoomHapticsController = zoomHapticsController,
             onPreviewViewReady = { previewView = it },
             onFocusTap = {
                 if (!cameraSettings.focusLocked) haptics.shutterHalfPress()
             }
+        )
+
+        // Zoom readout overlay - top-end corner, out of the way
+        ZoomReadoutOverlay(
+            state = zoomState,
+            visible = zoomOverlayVisible,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 48.dp, end = 16.dp)
         )
 
         if (cameraUiState.shutterFlash) {
@@ -308,6 +342,8 @@ fun CameraScreen(
 private fun AnalogViewfinder(
     settings: CameraSettings,
     camera: Camera?,
+    zoomController: S24UltraZoomController,
+    zoomHapticsController: ZoomHapticsController,
     onPreviewViewReady: (PreviewView) -> Unit,
     onFocusTap: () -> Unit
 ) {
@@ -359,6 +395,9 @@ private fun AnalogViewfinder(
                 },
                 update = { targetPreview ->
                     targetPreview.setOnTouchListener { _, event ->
+                        // Only handle single-finger taps for focus.
+                        // Multi-finger (pinch) is handled by the Compose overlay above.
+                        if (event.pointerCount > 1) return@setOnTouchListener false
                         if (event.action != MotionEvent.ACTION_UP) return@setOnTouchListener true
                         val activeCamera = camera ?: return@setOnTouchListener true
                         if (settings.focusLocked) return@setOnTouchListener true
@@ -372,6 +411,48 @@ private fun AnalogViewfinder(
                     }
                 },
                 modifier = Modifier.fillMaxSize()
+            )
+
+            // Pinch-to-zoom gesture overlay.
+            // Uses the new gesture lifecycle: start → filtered updates → end.
+            // Dead zone + smoothing prevent nervous response during finger tremor.
+            // Sits above PreviewView; single-finger taps pass through to focus handler below.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTransformGestures(
+                            panZoomLock = true
+                        ) { _, _, zoom, _ ->
+                            if (zoom != 1f) {
+                                // On first zoom motion in gesture, notify controllers
+                                if (!zoomController.zoomState.value.isUserZooming) {
+                                    zoomController.onGestureStart()
+                                    zoomHapticsController.onGestureStart(
+                                        currentZoom = zoomController.currentZoomRatio,
+                                        currentMm = zoomController.zoomState.value.equivalentMm
+                                    )
+                                }
+
+                                val previousZoom = zoomController.currentZoomRatio
+                                val applied = zoomController.applyGestureZoom(zoom)
+
+                                // Only fire haptics if zoom actually changed (dead zone cleared)
+                                if (applied != null) {
+                                    zoomHapticsController.onZoomChanged(
+                                        previousZoom = previousZoom,
+                                        currentZoom = applied,
+                                        currentMm = zoomController.zoomState.value.equivalentMm,
+                                        minZoom = zoomController.zoomState.value.minZoomRatio,
+                                        maxZoom = zoomController.zoomState.value.maxZoomRatio,
+                                        isUserGesture = true
+                                    )
+                                }
+                            }
+                        }
+                        // Gesture ended (fingers lifted) - mark zoom complete
+                        zoomController.endUserZoom()
+                    }
             )
 
             GridOverlay(mode = settings.gridMode)
